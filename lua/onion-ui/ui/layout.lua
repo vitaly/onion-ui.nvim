@@ -194,117 +194,81 @@ function M.setup_keymaps()
     end
   end, 50)
 
-  vim.api.nvim_buf_set_keymap(layout_state.nav_buf, "n", "<CR>", "", {
-    callback = function()
-      local keys = nav_pane.get_current_keys()
-      local selected_idx = nav_state.get_selected_index()
-      if selected_idx <= #keys then
-        local selected_key = keys[selected_idx]
-        nav_state.navigate_into(selected_key)
-        M.update_content()
-        -- Reset cursor to first key after navigation
-        local new_keys = nav_pane.get_current_keys()
-        if #new_keys > 0 then
-          vim.api.nvim_win_set_cursor(layout_state.nav_win, { 3, 2 })
-        end
+  -- Navigation functions
+  local function navigate_into()
+    local keys = nav_pane.get_current_keys()
+    local selected_idx = nav_state.get_selected_index()
+    if selected_idx <= #keys then
+      local selected_key = keys[selected_idx]
+      nav_state.navigate_into(selected_key)
+      M.update_content()
+      -- Reset cursor to first key after navigation
+      local new_keys = nav_pane.get_current_keys()
+      if #new_keys > 0 then
+        vim.api.nvim_win_set_cursor(layout_state.nav_win, { 3, 2 })
       end
-    end,
-    noremap = true,
-    silent = true,
-  })
-
-  vim.api.nvim_buf_set_keymap(layout_state.nav_buf, "n", "h", "", {
-    callback = function()
-      local current_path = nav_state.get_path()
-      if #current_path > 0 then -- Only go up if not at root
-        nav_state.navigate_up()
-        M.update_content()
-        -- Reset cursor to first key after going up
-        local keys = nav_pane.get_current_keys()
-        if #keys > 0 then
-          vim.api.nvim_win_set_cursor(layout_state.nav_win, { 3, 2 })
-        end
-      end
-    end,
-    noremap = true,
-    silent = true,
-  })
-
-  vim.api.nvim_buf_set_keymap(layout_state.nav_buf, "n", "<BS>", "", {
-    callback = function()
-      local current_path = nav_state.get_path()
-      if #current_path > 0 then -- Only go up if not at root
-        nav_state.navigate_up()
-        M.update_content()
-        -- Reset cursor to first key after going up
-        local keys = nav_pane.get_current_keys()
-        if #keys > 0 then
-          vim.api.nvim_win_set_cursor(layout_state.nav_win, { 3, 2 })
-        end
-      end
-    end,
-    noremap = true,
-    silent = true,
-  })
-
-  vim.api.nvim_buf_set_keymap(layout_state.nav_buf, "n", "l", "", {
-    callback = function()
-      local keys = nav_pane.get_current_keys()
-      local selected_idx = nav_state.get_selected_index()
-      if selected_idx <= #keys then
-        local selected_key = keys[selected_idx]
-        nav_state.navigate_into(selected_key)
-        M.update_content()
-        -- Reset cursor to first key after navigation
-        local new_keys = nav_pane.get_current_keys()
-        if #new_keys > 0 then
-          vim.api.nvim_win_set_cursor(layout_state.nav_win, { 3, 2 })
-        end
-      end
-    end,
-    noremap = true,
-    silent = true,
-  })
-
-  -- Quit mappings
-  local quit_mapping = function()
-    M.close()
+    end
   end
 
-  vim.api.nvim_buf_set_keymap(layout_state.nav_buf, "n", "q", "", {
-    callback = quit_mapping,
-    noremap = true,
-    silent = true,
-  })
+  local function navigate_up()
+    local current_path = nav_state.get_path()
+    if #current_path > 0 then -- Only go up if not at root
+      -- Store: current selected key before navigating up
+      local keys_before = nav_pane.get_current_keys()
+      local selected_idx = nav_state.get_selected_index()
+      local parent_key = selected_idx <= #keys_before and keys_before[selected_idx] or nil
 
-  vim.api.nvim_buf_set_keymap(layout_state.nav_buf, "n", "<Esc>", "", {
-    callback = quit_mapping,
-    noremap = true,
-    silent = true,
-  })
+      nav_state.navigate_up()
+      M.update_content()
 
-  vim.api.nvim_buf_set_keymap(layout_state.preview_buf, "n", "q", "", {
-    callback = quit_mapping,
-    noremap = true,
-    silent = true,
-  })
+      -- Position cursor at the parent key we just navigated out of
+      local keys_after = nav_pane.get_current_keys()
+      if #keys_after > 0 and parent_key then
+        for i, key in ipairs(keys_after) do
+          if key == parent_key then
+            vim.api.nvim_win_set_cursor(layout_state.nav_win, { i + 2, 2 }) -- +2 for path and separator
+            break
+          end
+        end
+      else
+        -- If no parent key found, position at first key
+        vim.api.nvim_win_set_cursor(layout_state.nav_win, { 3, 2 })
+      end
+    end
+  end
 
-  vim.api.nvim_buf_set_keymap(layout_state.preview_buf, "n", "<Esc>", "", {
-    callback = quit_mapping,
-    noremap = true,
-    silent = true,
-  })
-
--- Add buffer close detection to close both panes
-  vim.api.nvim_create_autocmd("BufWinLeave", {
+  -- Navigation mappings
+  vim.keymap.set("n", "<CR>", navigate_into, { 
     buffer = layout_state.nav_buf,
-    callback = M.close,
+    silent = true,
   })
 
-  vim.api.nvim_create_autocmd("BufWinLeave", {
-    buffer = layout_state.preview_buf,
-    callback = M.close,
+  vim.keymap.set("n", "h", navigate_up, { 
+    buffer = layout_state.nav_buf,
+    silent = true,
   })
+
+  vim.keymap.set("n", "<BS>", navigate_up, { 
+    buffer = layout_state.nav_buf,
+    silent = true,
+  })
+
+  vim.keymap.set("n", "l", navigate_into, { 
+    buffer = layout_state.nav_buf,
+    silent = true,
+  })
+
+  -- Common quit mappings for both panes
+  for _, buf in ipairs({ layout_state.nav_buf, layout_state.preview_buf }) do
+    for _, key in ipairs({ "q", "<Esc>" }) do
+      vim.keymap.set("n", key, M.close, { 
+        buffer = buf,
+        silent = true,
+      })
+    end
+
+    vim.api.nvim_create_autocmd("BufWinLeave", { buffer = buf, callback = M.close })
+  end
 end
 
 -- Close the TUI layout
