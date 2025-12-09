@@ -2,7 +2,7 @@ local M = {}
 
 local nav_pane = require('onion-ui.ui.nav_pane')
 local nav_state = require('onion-ui.state.navigation')
-local preview_pane = require('onion-ui.ui.preview_pane')
+local config_pane = require('onion-ui.ui.config_pane')
 
 -- Cursor position for first key (line 3 = after path + separator, column 2 = after indicator)
 local FIRST_KEY_POS = { 3, 2 }
@@ -11,8 +11,8 @@ local FIRST_KEY_POS = { 3, 2 }
 local layout_state = {
   nav_win = nil,
   nav_buf = nil,
-  preview_win = nil,
-  preview_buf = nil,
+  config_win = nil,
+  config_buf = nil,
   config = nil,
 }
 
@@ -79,31 +79,31 @@ function M.create_layout()
   layout_state.nav_buf = vim.api.nvim_create_buf(false, true)
   layout_state.nav_win = vim.api.nvim_open_win(layout_state.nav_buf, true, nav_config)
 
-  -- Preview pane (right, 60% width)
-  local preview_width = width - nav_width - 3 -- Account for borders
-  local preview_config = {
+  -- Config pane (right, 60% width)
+  local config_width = width - nav_width - 3 -- Account for borders
+  local config_window_config = {
     relative = 'editor',
-    width = preview_width,
+    width = config_width,
     height = height,
     col = col + nav_width + 3,
     row = row,
     border = 'single',
     style = 'minimal',
-    title = ' Preview ',
+    title = ' Config ',
     title_pos = 'center',
   }
 
-  layout_state.preview_buf = vim.api.nvim_create_buf(false, true)
-  layout_state.preview_win = vim.api.nvim_open_win(layout_state.preview_buf, false, preview_config)
+  layout_state.config_buf = vim.api.nvim_create_buf(false, true)
+  layout_state.config_win = vim.api.nvim_open_win(layout_state.config_buf, false, config_window_config)
 
   -- Set window options
   vim.wo[layout_state.nav_win].wrap = false
   vim.wo[layout_state.nav_win].cursorline = true
-  vim.wo[layout_state.preview_win].wrap = true
+  vim.wo[layout_state.config_win].wrap = true
 
   -- Set buffer options
   vim.bo[layout_state.nav_buf].filetype = 'onion-ui-nav'
-  vim.bo[layout_state.preview_buf].filetype = 'lua'
+  vim.bo[layout_state.config_buf].filetype = 'lua'
 end
 
 -- Update content in both panes
@@ -120,16 +120,16 @@ function M.update_content()
     end
   end
 
-  -- Update preview pane with error handling
-  if layout_state.preview_buf and vim.api.nvim_buf_is_valid(layout_state.preview_buf) then
+  -- Update config pane with error handling
+  if layout_state.config_buf and vim.api.nvim_buf_is_valid(layout_state.config_buf) then
     local ok, err = pcall(
-      preview_pane.update,
-      layout_state.preview_buf,
-      layout_state.preview_win,
+      config_pane.update,
+      layout_state.config_buf,
+      layout_state.config_win,
       layout_state.config
     )
     if not ok then
-      vim.notify('onion-ui: Failed to update preview pane: ' .. tostring(err), vim.log.levels.WARN)
+      vim.notify('onion-ui: Failed to update config pane: ' .. tostring(err), vim.log.levels.WARN)
     end
   end
 end
@@ -238,7 +238,7 @@ function M.setup_keymaps()
   vim.keymap.set('n', 'l', navigate_into, { buffer = layout_state.nav_buf, silent = true })
 
   -- Common quit mappings for both panes
-  for _, buf in ipairs({ layout_state.nav_buf, layout_state.preview_buf }) do
+  for _, buf in ipairs({ layout_state.nav_buf, layout_state.config_buf }) do
     for _, key in ipairs({ 'q', '<Esc>' }) do
       vim.keymap.set('n', key, M.close, { buffer = buf, silent = true })
     end
@@ -259,15 +259,15 @@ function M.close()
   if layout_state.nav_win and vim.api.nvim_win_is_valid(layout_state.nav_win) then
     vim.api.nvim_win_close(layout_state.nav_win, true)
   end
-  if layout_state.preview_win and vim.api.nvim_win_is_valid(layout_state.preview_win) then
-    vim.api.nvim_win_close(layout_state.preview_win, true)
+  if layout_state.config_win and vim.api.nvim_win_is_valid(layout_state.config_win) then
+    vim.api.nvim_win_close(layout_state.config_win, true)
   end
 
   -- Reset state
   layout_state.nav_win = nil
   layout_state.nav_buf = nil
-  layout_state.preview_win = nil
-  layout_state.preview_buf = nil
+  layout_state.config_win = nil
+  layout_state.config_buf = nil
   layout_state.config = nil
   is_active = false
 end
