@@ -14,13 +14,7 @@ end
 
 -- Get current path as list
 function M.get_path()
-  return vim.deepcopy(current_path)
-end
-
--- Set current path
-function M.set_path(path)
-  current_path = vim.deepcopy(path)
-  selected_index = 1
+  return current_path
 end
 
 -- Navigate to parent directory
@@ -61,22 +55,6 @@ end
 -- Set selected index
 function M.set_selected_index(index)
   selected_index = index
-end
-
--- Increment selected index with wrap-around
-function M.move_selection_down(max_items)
-  if max_items == 0 then
-    return
-  end
-  selected_index = selected_index % max_items + 1
-end
-
--- Decrement selected index with wrap-around
-function M.move_selection_up(max_items)
-  if max_items == 0 then
-    return
-  end
-  selected_index = (selected_index - 2) % max_items + 1
 end
 
 return M

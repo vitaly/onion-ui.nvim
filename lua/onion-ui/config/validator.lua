@@ -8,7 +8,7 @@ function M.validate()
   end
 
   -- Check required methods
-  local required_methods = {'get', 'get_default', 'get_user'}
+  local required_methods = { 'get', 'get_default', 'get_user' }
   for _, method in ipairs(required_methods) do
     if type(config[method]) ~= 'function' then
       return false, string.format('onion.config missing required method: %s', method)

@@ -4,18 +4,18 @@ local M = {}
 local current_keys = {}
 
 -- Update navigation pane content
-function M.update(buf, config)
-  local nav_state = require("onion-ui.state.navigation")
+function M.update(buf, win, config)
+  local nav_state = require('onion-ui.state.navigation')
 
   -- Make buffer modifiable
-  vim.api.nvim_buf_set_option(buf, "modifiable", true)
+  vim.bo[buf].modifiable = true
 
   -- Get current path and keys
   local config_path = nav_state.get_config_path()
   local current_data = config.get(config_path)
 
   -- Extract keys from current data
-  if type(current_data) == "table" then
+  if type(current_data) == 'table' then
     current_keys = {}
     for key, _ in pairs(current_data) do
       table.insert(current_keys, key)
@@ -44,33 +44,33 @@ function M.update(buf, config)
   -- Add current path display
   local display_path = nav_state.get_display_path()
   table.insert(lines, display_path)
-  local win_width = vim.api.nvim_win_get_width(0) - 4 -- Account for borders and padding
-  table.insert(lines, string.rep("─", math.max(10, win_width)))
+  local win_width = vim.api.nvim_win_get_width(win) - 4 -- Account for borders and padding
+  table.insert(lines, string.rep('─', math.max(10, win_width)))
 
   -- Add keys
   for i, key in ipairs(current_keys) do
     local display_key = key
     -- Format numeric keys as [1] foo, [2] bar, etc.
-    if type(key) == "number" then
+    if type(key) == 'number' then
       local value = current_data[key]
-      if type(value) == "string" then
-        display_key = string.format("[%d] %s", key, value)
+      if type(value) == 'string' then
+        display_key = string.format('[%d] %s', key, value)
       else
-        display_key = string.format("[%d] %s", key, tostring(value))
+        display_key = string.format('[%d] %s', key, tostring(value))
       end
     end
 
-    local line = "  " .. display_key
+    local line = '  ' .. display_key
     if i == nav_state.get_selected_index() and #current_keys > 0 then
-      line = "▶ " .. display_key
+      line = '▶ ' .. display_key
     end
     table.insert(lines, line)
   end
 
   -- If no keys, show message
   if #current_keys == 0 then
-    table.insert(lines, "")
-    table.insert(lines, "  (no keys at this level)")
+    table.insert(lines, '')
+    table.insert(lines, '  (no keys at this level)')
   end
 
   -- Set buffer content
@@ -80,7 +80,7 @@ function M.update(buf, config)
   -- Cursor positioning is now handled in layout.lua to sync with j/k navigation
 
   -- Make buffer non-modifiable again
-  vim.api.nvim_buf_set_option(buf, "modifiable", false)
+  vim.bo[buf].modifiable = false
 end
 
 -- Get current keys list
