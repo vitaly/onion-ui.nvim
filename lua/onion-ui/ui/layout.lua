@@ -209,10 +209,8 @@ function M.setup_keymaps()
   local function navigate_up()
     local current_path = nav_state.get_path()
     if #current_path > 0 then -- Only go up if not at root
-      -- Store: current selected key before navigating up
-      local keys_before = nav_pane.get_current_keys()
-      local selected_idx = nav_state.get_selected_index()
-      local parent_key = selected_idx <= #keys_before and keys_before[selected_idx] or nil
+      -- The key we navigated into is the last element of current_path
+      local parent_key = current_path[#current_path]
 
       nav_state.navigate_up()
       M.update_content()
