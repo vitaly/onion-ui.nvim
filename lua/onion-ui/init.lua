@@ -4,14 +4,12 @@ local M = {}
 function M.start()
   -- Validate onion.config availability
   local validator = require('onion-ui.config.validator')
-  local ok, result = validator.validate()
+  local ok = validator.validate()
 
   if not ok then
     vim.notify('onion-ui: ' .. result, vim.log.levels.ERROR)
     return
   end
-
-  local config = result
 
   -- Initialize the TUI
   local layout = require('onion-ui.ui.layout')
@@ -21,7 +19,7 @@ function M.start()
   nav_state.reset()
 
   -- Create and show the TUI layout
-  layout.show(config)
+  layout.show()
 end
 
 return M

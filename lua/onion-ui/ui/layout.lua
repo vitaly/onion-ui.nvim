@@ -1,31 +1,33 @@
 local M = {}
 
+local config_pane = require('onion-ui.ui.config_pane')
 local nav_pane = require('onion-ui.ui.nav_pane')
 local nav_state = require('onion-ui.state.navigation')
-local config_pane = require('onion-ui.ui.config_pane')
 
 -- Cursor position for first key (line 3 = after path + separator, column 2 = after indicator)
 local FIRST_KEY_POS = { 3, 2 }
 
 -- Layout state
-local layout_state = {
+local layout = {
+  is_active = false,
   nav_win = nil,
   nav_buf = nil,
   config_win = nil,
   config_buf = nil,
-  config = nil,
 }
 
 -- Module-local flag to track if onion-ui is active
-local is_active = false
+
+function M.layout()
+  return layout
+end
 
 -- Show the TUI layout
-function M.show(config)
-  if is_active then
+function M.show()
+  if layout.is_active then
     return
   end
-  layout_state.config = config
-  is_active = true
+  layout.is_active = true
 
   -- Create layout with error handling
   local ok, err = pcall(M.create_layout)
@@ -40,9 +42,9 @@ function M.show(config)
   -- Set initial cursor position to first key
   local keys = nav_pane.get_current_keys()
   if #keys > 0 then
-    vim.api.nvim_win_set_cursor(layout_state.nav_win, FIRST_KEY_POS)
+    vim.api.nvim_win_set_cursor(layout.nav_win, FIRST_KEY_POS)
   else
-    vim.api.nvim_win_set_cursor(layout_state.nav_win, { 1, 0 })
+    vim.api.nvim_win_set_cursor(layout.nav_win, { 1, 0 })
   end
 
   -- Setup key mappings
@@ -76,8 +78,8 @@ function M.create_layout()
     title_pos = 'center',
   }
 
-  layout_state.nav_buf = vim.api.nvim_create_buf(false, true)
-  layout_state.nav_win = vim.api.nvim_open_win(layout_state.nav_buf, true, nav_config)
+  layout.nav_buf = vim.api.nvim_create_buf(false, true)
+  layout.nav_win = vim.api.nvim_open_win(layout.nav_buf, true, nav_config)
 
   -- Config pane (right, 60% width)
   local config_width = width - nav_width - 3 -- Account for borders
@@ -93,25 +95,24 @@ function M.create_layout()
     title_pos = 'center',
   }
 
-  layout_state.config_buf = vim.api.nvim_create_buf(false, true)
-  layout_state.config_win = vim.api.nvim_open_win(layout_state.config_buf, false, config_window_config)
+  layout.config_buf = vim.api.nvim_create_buf(false, true)
+  layout.config_win = vim.api.nvim_open_win(layout.config_buf, false, config_window_config)
 
   -- Set window options
-  vim.wo[layout_state.nav_win].wrap = false
-  vim.wo[layout_state.nav_win].cursorline = true
-  vim.wo[layout_state.config_win].wrap = true
+  vim.wo[layout.nav_win].wrap = false
+  vim.wo[layout.nav_win].cursorline = true
+  vim.wo[layout.config_win].wrap = true
 
   -- Set buffer options
-  vim.bo[layout_state.nav_buf].filetype = 'onion-ui-nav'
-  vim.bo[layout_state.config_buf].filetype = 'lua'
+  vim.bo[layout.nav_buf].filetype = 'onion-ui-nav'
+  vim.bo[layout.config_buf].filetype = 'lua'
 end
 
 -- Update content in both panes
 function M.update_content()
   -- Update navigation pane with error handling
-  if layout_state.nav_buf and vim.api.nvim_buf_is_valid(layout_state.nav_buf) then
-    local ok, err =
-      pcall(nav_pane.update, layout_state.nav_buf, layout_state.nav_win, layout_state.config)
+  if layout.nav_buf and vim.api.nvim_buf_is_valid(layout.nav_buf) then
+    local ok, err = pcall(nav_pane.update, layout.nav_buf, layout.nav_win)
     if not ok then
       vim.notify(
         'onion-ui: Failed to update navigation pane: ' .. tostring(err),
@@ -121,13 +122,8 @@ function M.update_content()
   end
 
   -- Update config pane with error handling
-  if layout_state.config_buf and vim.api.nvim_buf_is_valid(layout_state.config_buf) then
-    local ok, err = pcall(
-      config_pane.update,
-      layout_state.config_buf,
-      layout_state.config_win,
-      layout_state.config
-    )
+  if layout.config_buf and vim.api.nvim_buf_is_valid(layout.config_buf) then
+    local ok, err = pcall(config_pane.update, layout.config_buf, layout.config_win)
     if not ok then
       vim.notify('onion-ui: Failed to update config pane: ' .. tostring(err), vim.log.levels.WARN)
     end
@@ -142,14 +138,14 @@ function M.setup_keymaps()
   -- Cursor movement handler - update selection based on cursor position
   local function update_selection_from_cursor()
     -- Validate window and buffer are still valid
-    if not layout_state.nav_win or not vim.api.nvim_win_is_valid(layout_state.nav_win) then
+    if not layout.nav_win or not vim.api.nvim_win_is_valid(layout.nav_win) then
       return
     end
-    if not layout_state.nav_buf or not vim.api.nvim_buf_is_valid(layout_state.nav_buf) then
+    if not layout.nav_buf or not vim.api.nvim_buf_is_valid(layout.nav_buf) then
       return
     end
 
-    local ok, cursor_pos = pcall(vim.api.nvim_win_get_cursor, layout_state.nav_win)
+    local ok, cursor_pos = pcall(vim.api.nvim_win_get_cursor, layout.nav_win)
     if not ok then
       return
     end
@@ -169,9 +165,9 @@ function M.setup_keymaps()
       if key_index >= 1 and key_index <= #keys then
         nav_state.set_selected_index(key_index)
         -- Update content without moving cursor
-        local current_cursor = vim.api.nvim_win_get_cursor(layout_state.nav_win)
+        local current_cursor = vim.api.nvim_win_get_cursor(layout.nav_win)
         M.update_content()
-        vim.api.nvim_win_set_cursor(layout_state.nav_win, current_cursor)
+        vim.api.nvim_win_set_cursor(layout.nav_win, current_cursor)
       end
     end
 
@@ -180,10 +176,10 @@ function M.setup_keymaps()
 
   -- Set up autocmd to track cursor movement
   vim.defer_fn(function()
-    if layout_state.nav_buf and vim.api.nvim_buf_is_valid(layout_state.nav_buf) then
+    if layout.nav_buf and vim.api.nvim_buf_is_valid(layout.nav_buf) then
       local cursor_move_group = vim.api.nvim_create_augroup('OnionUICursorMove', { clear = true })
       vim.api.nvim_create_autocmd({ 'CursorMoved', 'CursorMovedI' }, {
-        buffer = layout_state.nav_buf,
+        buffer = layout.nav_buf,
         group = cursor_move_group,
         callback = update_selection_from_cursor,
       })
@@ -201,7 +197,7 @@ function M.setup_keymaps()
       -- Reset cursor to first key after navigation
       local new_keys = nav_pane.get_current_keys()
       if #new_keys > 0 then
-        vim.api.nvim_win_set_cursor(layout_state.nav_win, FIRST_KEY_POS)
+        vim.api.nvim_win_set_cursor(layout.nav_win, FIRST_KEY_POS)
       end
     end
   end
@@ -220,56 +216,51 @@ function M.setup_keymaps()
       if #keys_after > 0 and parent_key then
         for i, key in ipairs(keys_after) do
           if key == parent_key then
-            vim.api.nvim_win_set_cursor(layout_state.nav_win, { i + 2, 2 }) -- +2 for path and separator
+            vim.api.nvim_win_set_cursor(layout.nav_win, { i + 2, 2 }) -- +2 for path and separator
             break
           end
         end
       else
         -- If no parent key found, position at first key
-        vim.api.nvim_win_set_cursor(layout_state.nav_win, FIRST_KEY_POS)
+        vim.api.nvim_win_set_cursor(layout.nav_win, FIRST_KEY_POS)
       end
     end
   end
 
   -- Navigation mappings
-  vim.keymap.set('n', '<CR>', navigate_into, { buffer = layout_state.nav_buf, silent = true })
-  vim.keymap.set('n', 'h', navigate_up, { buffer = layout_state.nav_buf, silent = true })
-  vim.keymap.set('n', '<BS>', navigate_up, { buffer = layout_state.nav_buf, silent = true })
-  vim.keymap.set('n', 'l', navigate_into, { buffer = layout_state.nav_buf, silent = true })
+  vim.keymap.set('n', '<CR>', navigate_into, { buffer = layout.nav_buf, silent = true })
+  vim.keymap.set('n', 'h', navigate_up, { buffer = layout.nav_buf, silent = true })
+  vim.keymap.set('n', '<BS>', navigate_up, { buffer = layout.nav_buf, silent = true })
+  vim.keymap.set('n', 'l', navigate_into, { buffer = layout.nav_buf, silent = true })
 
   -- Common quit mappings for both panes
-  for _, buf in ipairs({ layout_state.nav_buf, layout_state.config_buf }) do
+  for _, buf in ipairs({ layout.nav_buf, layout.config_buf }) do
     for _, key in ipairs({ 'q', '<Esc>' }) do
       vim.keymap.set('n', key, M.close, { buffer = buf, silent = true })
     end
-    vim.api.nvim_create_autocmd('BufWinLeave', { buffer = buf, callback = M.close })
   end
+  vim.wo[layout.nav_win].winfixbuf = true
+  vim.wo[layout.config_win].winfixbuf = true
 end
 
 -- Close the TUI layout
 function M.close()
   -- Only close if onion-ui is active
-  if not is_active then
+  if not layout.is_active then
     return
   end
+  layout.is_active = false
 
-  -- Clean up autocmd (with error handling)
+  -- Clean up autocmds (with error handling)
   pcall(vim.api.nvim_del_augroup, 'OnionUICursorMove')
 
-  if layout_state.nav_win and vim.api.nvim_win_is_valid(layout_state.nav_win) then
-    vim.api.nvim_win_close(layout_state.nav_win, true)
-  end
-  if layout_state.config_win and vim.api.nvim_win_is_valid(layout_state.config_win) then
-    vim.api.nvim_win_close(layout_state.config_win, true)
-  end
+  pcall(vim.api.nvim_win_close, layout.config_win, true)
+  layout.config_win = nil
+  layout.config_buf = nil
 
-  -- Reset state
-  layout_state.nav_win = nil
-  layout_state.nav_buf = nil
-  layout_state.config_win = nil
-  layout_state.config_buf = nil
-  layout_state.config = nil
-  is_active = false
+  pcall(vim.api.nvim_win_close, layout.nav_win, true)
+  layout.nav_win = nil
+  layout.nav_buf = nil
 end
 
 return M

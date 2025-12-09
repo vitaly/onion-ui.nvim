@@ -3,8 +3,10 @@ local M = {}
 -- Current keys cache
 local current_keys = {}
 
+local config = require('onion.config')
+
 -- Update navigation pane content
-function M.update(buf, win, config)
+function M.update(buf, win)
   local nav_state = require('onion-ui.state.navigation')
 
   -- Make buffer modifiable

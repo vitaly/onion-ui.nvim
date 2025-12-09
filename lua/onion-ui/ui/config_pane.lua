@@ -1,3 +1,5 @@
+local config = require('onion.config')
+
 local M = {}
 
 -- Convert Lua value to display string using vim.inspect
@@ -12,7 +14,7 @@ local function value_to_string(value)
 end
 
 -- Update config pane content
-function M.update(buf, win, config)
+function M.update(buf, win)
   local nav_state = require('onion-ui.state.navigation')
   local nav_pane = require('onion-ui.ui.nav_pane')
 
@@ -64,3 +66,4 @@ function M.update(buf, win, config)
 end
 
 return M
+
