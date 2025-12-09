@@ -14,7 +14,8 @@ local function value_to_string(value)
 end
 
 -- Update config pane content
-function M.update(buf, win)
+function M.update(buf, win, config_mode)
+  config_mode = config_mode or 'merged' -- Default to merged if not specified
   local nav_state = require('onion-ui.state.navigation')
   local nav_pane = require('onion-ui.ui.nav_pane')
 
@@ -37,14 +38,37 @@ function M.update(buf, win)
     end
   end
 
-  -- Get the config data
-  local data = config.get(config_path)
+  -- Get the config data based on mode
+  local data
+  if config_mode == 'default' then
+    data = config.get_default(config_path)
+  elseif config_mode == 'user' then
+    data = config.get_user(config_path)
+  else
+    data = config.get(config_path)
+  end
 
   -- Build content lines
   local lines = {}
 
-  -- Add header with path
-  table.insert(lines, 'Config path: ' .. (config_path == '' and '/' or config_path))
+  -- Add tabs header
+  local modes = { 'merged', 'default', 'user' }
+  local tab_parts = {}
+
+  for _, mode in ipairs(modes) do
+    if mode == config_mode then
+      -- Active tab - use brackets and capitalization
+      table.insert(tab_parts, '[' .. mode:upper() .. ']')
+    else
+      -- Inactive tab - lowercase
+      table.insert(tab_parts, mode)
+    end
+  end
+
+  -- Center the tabs
+  local tab_line = ' ' .. table.concat(tab_parts, ' ') .. ' '
+  table.insert(lines, tab_line)
+
   local win_width = vim.api.nvim_win_get_width(win) - 4 -- Account for borders and padding
   table.insert(lines, string.rep('─', math.max(10, win_width)))
   table.insert(lines, '')

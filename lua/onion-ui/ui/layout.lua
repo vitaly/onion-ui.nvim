@@ -14,6 +14,7 @@ local layout = {
   nav_buf = nil,
   config_win = nil,
   config_buf = nil,
+  config_mode = 'merged', -- Can be 'merged', 'default', or 'user'
 }
 
 -- Module-local flag to track if onion-ui is active
@@ -108,6 +109,7 @@ function M.create_layout()
   vim.bo[layout.config_buf].filetype = 'lua'
 end
 
+
 -- Update content in both panes
 function M.update_content()
   -- Update navigation pane with error handling
@@ -123,7 +125,7 @@ function M.update_content()
 
   -- Update config pane with error handling
   if layout.config_buf and vim.api.nvim_buf_is_valid(layout.config_buf) then
-    local ok, err = pcall(config_pane.update, layout.config_buf, layout.config_win)
+    local ok, err = pcall(config_pane.update, layout.config_buf, layout.config_win, layout.config_mode)
     if not ok then
       vim.notify('onion-ui: Failed to update config pane: ' .. tostring(err), vim.log.levels.WARN)
     end
@@ -233,11 +235,28 @@ function M.setup_keymaps()
   vim.keymap.set('n', '<BS>', navigate_up, { buffer = layout.nav_buf, silent = true })
   vim.keymap.set('n', 'l', navigate_into, { buffer = layout.nav_buf, silent = true })
 
+  -- Config mode cycling
+  local function cycle_config_mode()
+    -- Cycle through modes: merged -> default -> user -> merged
+    if layout.config_mode == 'merged' then
+      layout.config_mode = 'default'
+    elseif layout.config_mode == 'default' then
+      layout.config_mode = 'user'
+    else
+      layout.config_mode = 'merged'
+    end
+
+    -- Update content
+    M.update_content()
+  end
+
   -- Common quit mappings for both panes
   for _, buf in ipairs({ layout.nav_buf, layout.config_buf }) do
     for _, key in ipairs({ 'q', '<Esc>' }) do
       vim.keymap.set('n', key, M.close, { buffer = buf, silent = true })
     end
+    -- Add Tab mapping to cycle config mode
+    vim.keymap.set('n', '<Tab>', cycle_config_mode, { buffer = buf, silent = true })
   end
   vim.wo[layout.nav_win].winfixbuf = true
   vim.wo[layout.config_win].winfixbuf = true
