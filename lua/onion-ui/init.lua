@@ -2,6 +2,10 @@ local M = {}
 
 -- Start the onion-ui TUI
 function M.start()
+  -- Setup highlight groups first
+  local highlights = require('onion-ui.ui.highlights')
+  highlights.setup()
+
   -- Validate onion.config availability
   local validator = require('onion-ui.config.validator')
   local ok = validator.validate()
