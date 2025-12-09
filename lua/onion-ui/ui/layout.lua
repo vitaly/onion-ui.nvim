@@ -235,6 +235,61 @@ function M.setup_keymaps()
   vim.keymap.set('n', '<BS>', navigate_up, { buffer = layout.nav_buf, silent = true })
   vim.keymap.set('n', 'l', navigate_into, { buffer = layout.nav_buf, silent = true })
 
+  -- Reset key mapping
+  local function reset_selected_key()
+    local keys = nav_pane.get_current_keys()
+    local selected_idx = nav_state.get_selected_index()
+
+    if #keys > 0 and selected_idx <= #keys then
+      local selected_key = keys[selected_idx]
+      local nav_path = nav_state.get_config_path()
+      local config = require('onion.config')
+
+      -- Special handling for numeric keys (arrays)
+      if type(selected_key) == 'number' then
+        -- Get the parent array from user config
+        local user_array = config.get_user(nav_path)
+
+        if user_array and type(user_array) == 'table' then
+          -- Create a copy and remove the item at the selected index
+          local new_array = {}
+          for i, v in ipairs(user_array) do
+            if i ~= selected_key then
+              table.insert(new_array, v)
+            end
+          end
+
+          -- Set the modified array back
+          local ok, err = pcall(config.set, nav_path, new_array)
+
+          if not ok then
+            vim.notify('onion-ui: Failed to update array: ' .. tostring(err), vim.log.levels.ERROR)
+          else
+            -- Refresh the UI
+            M.update_content()
+          end
+        else
+          -- If no user array, nothing to reset
+          vim.notify('onion-ui: No user modification to reset', vim.log.levels.WARN)
+        end
+      else
+        -- Regular reset for string keys
+        local reset_path = nav_path ~= '' and (nav_path .. '.' .. selected_key) or tostring(selected_key)
+
+        local ok, err = pcall(config.reset, reset_path)
+
+        if not ok then
+          vim.notify('onion-ui: Failed to reset key: ' .. tostring(err), vim.log.levels.ERROR)
+        else
+          -- Refresh the UI
+          M.update_content()
+        end
+      end
+    end
+  end
+
+  vim.keymap.set('n', 'x', reset_selected_key, { buffer = layout.nav_buf, silent = true })
+
   -- Config mode cycling
   local function cycle_config_mode()
     -- Cycle through modes: merged -> default -> user -> merged

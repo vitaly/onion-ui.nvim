@@ -13,6 +13,8 @@ require('onion-ui').start()
 - `j/k` - Navigate up/down through keys
 - `h/l` - Navigate to parent/into selected key
 - `<Enter>` - Navigate into selected key
+- `x` - Reset selected key to default value
+- `<Tab>` - Cycle config view (merged/default/user)
 - `q/<Esc>` - Quit the TUI
 
 ## Requirements
