@@ -29,7 +29,7 @@ function M.update(buf, win, config_mode)
 
   -- Build the full path for config
   local config_path = current_path
-  if #keys > 0 and selected_idx <= #keys then
+  if #keys > 0 and selected_idx > 0 and selected_idx <= #keys then
     local selected_key = keys[selected_idx]
     if config_path ~= '' then
       config_path = config_path .. '.' .. selected_key

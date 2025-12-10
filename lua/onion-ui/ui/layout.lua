@@ -60,16 +60,13 @@ function M.show()
     return
   end
 
+  -- Set initial cursor position to path line and deselect any key
+  nav_state.set_selected_index(0)
+
   -- Initialize content
   M.update_content()
 
-  -- Set initial cursor position to first key
-  local keys = nav_pane.get_current_keys()
-  if #keys > 0 then
-    vim.api.nvim_win_set_cursor(layout.nav_win, FIRST_KEY_POS)
-  else
-    vim.api.nvim_win_set_cursor(layout.nav_win, { 1, 0 })
-  end
+  vim.api.nvim_win_set_cursor(layout.nav_win, { 1, 0 })
 
   -- Setup key mappings
   M.setup_keymaps()
@@ -233,17 +230,37 @@ local function apply_edit()
 
   if value == nil then
     -- Removing value - use reset to clear user override
+    if edit_state.original_path == '' then
+      vim.notify('Cannot reset the entire root config', vim.log.levels.WARN)
+      return
+    end
     local set_ok, set_err = pcall(config.reset, edit_state.original_path)
     if not set_ok then
       vim.notify('Failed to reset value: ' .. tostring(set_err), vim.log.levels.ERROR)
       return
     end
   else
-    -- Setting value - use set to add/update user config
-    local set_ok, set_err = pcall(config.set, edit_state.original_path, value)
-    if not set_ok then
-      vim.notify('Failed to set value: ' .. tostring(set_err), vim.log.levels.ERROR)
-      return
+    -- Special handling for root path - set each key individually
+    if edit_state.original_path == '' then
+      if type(value) ~= 'table' then
+        vim.notify('Root config must be a table', vim.log.levels.ERROR)
+        return
+      end
+      -- Set each top-level key from the edited root table
+      for key, val in pairs(value) do
+        local set_ok, set_err = pcall(config.set, tostring(key), val)
+        if not set_ok then
+          vim.notify('Failed to set ' .. tostring(key) .. ': ' .. tostring(set_err), vim.log.levels.ERROR)
+          return
+        end
+      end
+    else
+      -- Normal case - set the value at the specific path
+      local set_ok, set_err = pcall(config.set, edit_state.original_path, value)
+      if not set_ok then
+        vim.notify('Failed to set value: ' .. tostring(set_err), vim.log.levels.ERROR)
+        return
+      end
     end
   end
 
@@ -296,8 +313,16 @@ function M.setup_keymaps()
 
     local keys = nav_pane.get_current_keys()
 
+    -- Check if cursor is on path line (line 1) or separator (line 2)
+    if cursor_line <= 2 then
+      -- Deselect all keys, show whole path config
+      nav_state.set_selected_index(0)
+      -- Update content without moving cursor
+      local current_cursor = vim.api.nvim_win_get_cursor(layout.nav_win)
+      M.update_content()
+      vim.api.nvim_win_set_cursor(layout.nav_win, current_cursor)
     -- Check if cursor is on a key line (line >= 3)
-    if cursor_line >= 3 and #keys > 0 then
+    elseif cursor_line >= 3 and #keys > 0 then
       local key_index = cursor_line - 2 -- -2 for path and separator lines
       if key_index >= 1 and key_index <= #keys then
         nav_state.set_selected_index(key_index)
@@ -327,15 +352,13 @@ function M.setup_keymaps()
   local function navigate_into()
     local keys = nav_pane.get_current_keys()
     local selected_idx = nav_state.get_selected_index()
-    if selected_idx <= #keys then
+    if selected_idx > 0 and selected_idx <= #keys then
       local selected_key = keys[selected_idx]
       nav_state.navigate_into(selected_key)
       M.update_content()
-      -- Reset cursor to first key after navigation
-      local new_keys = nav_pane.get_current_keys()
-      if #new_keys > 0 then
-        vim.api.nvim_win_set_cursor(layout.nav_win, FIRST_KEY_POS)
-      end
+      -- Reset cursor to path line and deselect keys after navigation
+      nav_state.set_selected_index(0)
+      vim.api.nvim_win_set_cursor(layout.nav_win, { 1, 0 })
     end
   end
 
@@ -374,6 +397,12 @@ function M.setup_keymaps()
   local function reset_selected_key()
     local keys = nav_pane.get_current_keys()
     local selected_idx = nav_state.get_selected_index()
+
+    -- Can't reset when on path line (no specific key selected)
+    if selected_idx <= 0 then
+      vim.notify('Select a specific key to reset', vim.log.levels.WARN)
+      return
+    end
 
     if #keys > 0 and selected_idx <= #keys then
       local selected_key = keys[selected_idx]
@@ -425,64 +454,75 @@ function M.setup_keymaps()
 
   vim.keymap.set('n', 'x', reset_selected_key, { buffer = layout.nav_buf, silent = true })
 
-  -- Edit selected key
+  -- Edit selected key or whole path
   local function edit_selected_key()
     local keys = nav_pane.get_current_keys()
     local selected_idx = nav_state.get_selected_index()
+    local nav_path = nav_state.get_config_path()
+    local config = require('onion.config')
 
-    if #keys > 0 and selected_idx <= #keys then
+    -- Determine what to edit
+    local full_path
+    if selected_idx > 0 and selected_idx <= #keys then
+      -- Editing a specific key
       local selected_key = keys[selected_idx]
-      local nav_path = nav_state.get_config_path()
-      local config = require('onion.config')
 
-      -- Build the full path for the key to edit
-      local full_path = nav_path ~= '' and (nav_path .. '.' .. selected_key) or tostring(selected_key)
-
-      -- Get user and default values
-      local user_value = config.get_user(full_path)
-      local default_value = config.get_default(full_path)
-
-      -- Always use user value for editing (or nil if no user value)
-      local current_value = user_value
-
-      -- Check if it's a function (read-only)
-      if type(current_value) == 'function' then
-        vim.notify('Cannot edit function values', vim.log.levels.WARN)
+      -- Check if editing an array element (numeric key)
+      if type(selected_key) == 'number' then
+        vim.notify('Cannot edit array elements individually. Navigate up to edit the whole array.', vim.log.levels.WARN)
         return
       end
 
-      -- Build content string
-      local content_lines = {}
+      full_path = nav_path ~= '' and (nav_path .. '.' .. selected_key) or tostring(selected_key)
+    else
+      -- Editing whole path (selected_idx is 0 or no keys)
+      full_path = nav_path
+    end
 
-      -- User value (editable)
-      local user_str = value_to_string(current_value)
-      for line in user_str:gmatch('[^\n]+') do
+    -- Get user and default values
+    local user_value = config.get_user(full_path)
+    local default_value = config.get_default(full_path)
+
+    -- Always use user value for editing (or nil if no user value)
+    local current_value = user_value
+
+    -- Check if it's a function (read-only)
+    if type(current_value) == 'function' then
+      vim.notify('Cannot edit function values', vim.log.levels.WARN)
+      return
+    end
+
+    -- Build content string
+    local content_lines = {}
+
+    -- User value (editable)
+    local user_str = value_to_string(current_value)
+    for line in user_str:gmatch('[^\n]+') do
+      table.insert(content_lines, line)
+    end
+
+    -- Always add default value as comment if it exists (even when no user value yet)
+    if default_value ~= nil then
+      table.insert(content_lines, '')
+      table.insert(content_lines, '-- Default value for reference:')
+      local default_commented = generate_commented_defaults(default_value)
+      for line in default_commented:gmatch('[^\n]+') do
         table.insert(content_lines, line)
       end
+    end
 
-      -- Always add default value as comment if it exists (even when no user value yet)
-      if default_value ~= nil then
-        table.insert(content_lines, '')
-        table.insert(content_lines, '-- Default value for reference:')
-        local default_commented = generate_commented_defaults(default_value)
-        for line in default_commented:gmatch('[^\n]+') do
-          table.insert(content_lines, line)
-        end
-      end
+    local content_str = table.concat(content_lines, '\n')
 
-      local content_str = table.concat(content_lines, '\n')
+    -- Create edit window
+    local win, buf = create_edit_window(content_str)
+    if win and buf then
+      edit_state.win = win
+      edit_state.buf = buf
+      edit_state.original_path = full_path
 
-      -- Create edit window
-      local win, buf = create_edit_window(content_str)
-      if win and buf then
-        edit_state.win = win
-        edit_state.buf = buf
-        edit_state.original_path = full_path
-
-        -- Set up keymaps for edit window
-        vim.keymap.set('n', '<CR>', apply_edit, { buffer = buf, silent = true })
-        vim.keymap.set('n', '<Esc>', cancel_edit, { buffer = buf, silent = true })
-      end
+      -- Set up keymaps for edit window
+      vim.keymap.set('n', '<CR>', apply_edit, { buffer = buf, silent = true })
+      vim.keymap.set('n', '<Esc>', cancel_edit, { buffer = buf, silent = true })
     end
   end
 

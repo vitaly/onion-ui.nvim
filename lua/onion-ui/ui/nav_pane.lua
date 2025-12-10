@@ -91,6 +91,12 @@ function M.update(buf, win)
     table.insert(lines, '  (no keys at this level)')
   end
 
+  -- Add keymap guide at the bottom
+  table.insert(lines, '')
+  table.insert(lines, string.rep('─', math.max(10, win_width)))
+  table.insert(lines, ' j/k:nav  l/Enter:in  h/BS:up')
+  table.insert(lines, ' e:edit  x:reset  Tab:mode  q:quit')
+
   -- Set buffer content
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
