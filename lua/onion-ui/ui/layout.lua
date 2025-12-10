@@ -7,6 +7,29 @@ local nav_state = require('onion-ui.state.navigation')
 -- Cursor position for first key (line 3 = after path + separator, column 2 = after indicator)
 local FIRST_KEY_POS = { 3, 2 }
 
+-- Convert value to string (reuse from config_pane)
+local function value_to_string(value)
+  if value == nil then
+    return 'nil'
+  elseif type(value) == 'function' then
+    return '<function>'
+  else
+    return vim.inspect(value, { newline = '\n', indent = '  ' })
+  end
+end
+
+-- Generate commented default config for reference
+local function generate_commented_defaults(value)
+  local defaults_str = vim.inspect(value, { newline = '\n', indent = '  ' })
+  local lines = {}
+
+  for line in defaults_str:gmatch('[^\n]+') do
+    table.insert(lines, '-- ' .. line)
+  end
+
+  return table.concat(lines, '\n')
+end
+
 -- Layout state
 local layout = {
   is_active = false,
@@ -130,6 +153,118 @@ function M.update_content()
       vim.notify('onion-ui: Failed to update config pane: ' .. tostring(err), vim.log.levels.WARN)
     end
   end
+end
+
+-- Edit window state
+local edit_state = {
+  win = nil,
+  buf = nil,
+  original_path = nil,
+}
+
+-- Create edit window for value editing
+local function create_edit_window(value_str)
+  local ui = vim.api.nvim_list_uis()[1]
+  if not ui then
+    vim.notify('onion-ui: No UI available', vim.log.levels.ERROR)
+    return nil, nil
+  end
+
+  local width = math.floor(ui.width * 0.8)
+  local height = math.floor(ui.height * 0.6)
+  local col = math.floor((ui.width - width) / 2)
+  local row = math.floor((ui.height - height) / 2)
+
+  local config = {
+    relative = 'editor',
+    width = width,
+    height = height,
+    col = col,
+    row = row,
+    border = 'single',
+    style = 'minimal',
+    title = ' Edit Value ',
+    title_pos = 'center',
+  }
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  local win = vim.api.nvim_open_win(buf, true, config)
+
+  -- Set buffer options
+  vim.bo[buf].filetype = 'lua'
+  vim.bo[buf].buftype = 'nofile'
+  vim.bo[buf].bufhidden = 'wipe'
+  vim.bo[buf].modifiable = true
+
+  -- Set initial content
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(value_str, '\n'))
+
+  -- Set window options
+  vim.wo[win].wrap = true
+  vim.wo[win].cursorline = false
+
+  return win, buf
+end
+
+-- Apply edited value
+local function apply_edit()
+  if not edit_state.win or not vim.api.nvim_win_is_valid(edit_state.win) then
+    return
+  end
+
+  -- Get the entire buffer content and evaluate as Lua
+  local content = table.concat(vim.api.nvim_buf_get_lines(edit_state.buf, 0, -1, false), '\n')
+
+  -- Parse the Lua value - comments are naturally ignored by Lua
+  local fn, err = loadstring('return ' .. content)
+  if not fn then
+    vim.notify('Invalid Lua syntax: ' .. tostring(err), vim.log.levels.ERROR)
+    return
+  end
+
+  local ok, value = pcall(fn)
+  if not ok then
+    vim.notify('Error evaluating Lua: ' .. tostring(value), vim.log.levels.ERROR)
+    return
+  end
+
+  -- Set the new value in user config
+  local config = require('onion.config')
+
+  if value == nil then
+    -- Removing value - use reset to clear user override
+    local set_ok, set_err = pcall(config.reset, edit_state.original_path)
+    if not set_ok then
+      vim.notify('Failed to reset value: ' .. tostring(set_err), vim.log.levels.ERROR)
+      return
+    end
+  else
+    -- Setting value - use set to add/update user config
+    local set_ok, set_err = pcall(config.set, edit_state.original_path, value)
+    if not set_ok then
+      vim.notify('Failed to set value: ' .. tostring(set_err), vim.log.levels.ERROR)
+      return
+    end
+  end
+
+  -- Close edit window
+  vim.api.nvim_win_close(edit_state.win, true)
+  edit_state.win = nil
+  edit_state.buf = nil
+  edit_state.original_path = nil
+
+  -- Refresh the UI
+  M.update_content()
+end
+
+-- Cancel editing
+local function cancel_edit()
+  if edit_state.win and vim.api.nvim_win_is_valid(edit_state.win) then
+    vim.api.nvim_win_close(edit_state.win, true)
+  end
+  edit_state.win = nil
+  edit_state.buf = nil
+  edit_state.original_path = nil
 end
 
 -- Setup key mappings
@@ -290,6 +425,69 @@ function M.setup_keymaps()
 
   vim.keymap.set('n', 'x', reset_selected_key, { buffer = layout.nav_buf, silent = true })
 
+  -- Edit selected key
+  local function edit_selected_key()
+    local keys = nav_pane.get_current_keys()
+    local selected_idx = nav_state.get_selected_index()
+
+    if #keys > 0 and selected_idx <= #keys then
+      local selected_key = keys[selected_idx]
+      local nav_path = nav_state.get_config_path()
+      local config = require('onion.config')
+
+      -- Build the full path for the key to edit
+      local full_path = nav_path ~= '' and (nav_path .. '.' .. selected_key) or tostring(selected_key)
+
+      -- Get user and default values
+      local user_value = config.get_user(full_path)
+      local default_value = config.get_default(full_path)
+
+      -- Always use user value for editing (or nil if no user value)
+      local current_value = user_value
+
+      -- Check if it's a function (read-only)
+      if type(current_value) == 'function' then
+        vim.notify('Cannot edit function values', vim.log.levels.WARN)
+        return
+      end
+
+      -- Build content string
+      local content_lines = {}
+
+      -- User value (editable)
+      local user_str = value_to_string(current_value)
+      for line in user_str:gmatch('[^\n]+') do
+        table.insert(content_lines, line)
+      end
+
+      -- Always add default value as comment if it exists (even when no user value yet)
+      if default_value ~= nil then
+        table.insert(content_lines, '')
+        table.insert(content_lines, '-- Default value for reference:')
+        local default_commented = generate_commented_defaults(default_value)
+        for line in default_commented:gmatch('[^\n]+') do
+          table.insert(content_lines, line)
+        end
+      end
+
+      local content_str = table.concat(content_lines, '\n')
+
+      -- Create edit window
+      local win, buf = create_edit_window(content_str)
+      if win and buf then
+        edit_state.win = win
+        edit_state.buf = buf
+        edit_state.original_path = full_path
+
+        -- Set up keymaps for edit window
+        vim.keymap.set('n', '<CR>', apply_edit, { buffer = buf, silent = true })
+        vim.keymap.set('n', '<Esc>', cancel_edit, { buffer = buf, silent = true })
+      end
+    end
+  end
+
+  vim.keymap.set('n', 'e', edit_selected_key, { buffer = layout.nav_buf, silent = true })
+
   -- Config mode cycling
   local function cycle_config_mode()
     -- Cycle through modes: merged -> default -> user -> merged
@@ -327,6 +525,10 @@ function M.close()
 
   -- Clean up autocmds (with error handling)
   pcall(vim.api.nvim_del_augroup, 'OnionUICursorMove')
+  pcall(vim.api.nvim_del_augroup, 'OnionUIWinLeave')
+
+  -- Close edit window if open
+  cancel_edit()
 
   pcall(vim.api.nvim_win_close, layout.config_win, true)
   layout.config_win = nil

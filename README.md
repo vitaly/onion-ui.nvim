@@ -14,6 +14,7 @@ require('onion-ui').start()
 - `h/l` - Navigate to parent/into selected key
 - `<Enter>` - Navigate into selected key
 - `x` - Reset selected key to default value
+- `e` - Edit selected key value as Lua expression
 - `<Tab>` - Cycle config view (merged/default/user)
 - `q/<Esc>` - Quit the TUI
 
