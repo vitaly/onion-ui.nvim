@@ -374,6 +374,36 @@ local function edit_selected_key()
   end
 end
 
+local function toggle_selected_key()
+  local keys = nav_pane.get_current_keys()
+  local selected_idx = nav_state.get_selected_index()
+  local nav_path = nav_state.get_config_path()
+  local config = require('onion.config')
+
+  local full_path
+  if selected_idx > 0 and selected_idx <= #keys then
+    local selected_key = keys[selected_idx]
+
+    -- Array elements cannot be toggled individually
+    if type(selected_key) == 'number' then
+      vim.notify('Cannot toggle array elements individually', vim.log.levels.WARN)
+      return
+    end
+
+    full_path = nav_path ~= '' and (nav_path .. '.' .. selected_key) or tostring(selected_key)
+  else
+    full_path = nav_path
+  end
+
+  local ok, err = pcall(config.toggle, full_path)
+
+  if not ok then
+    vim.notify('onion-ui: Failed to toggle key: ' .. tostring(err), vim.log.levels.ERROR)
+  else
+    M.update_content()
+  end
+end
+
 local function cycle_config_mode()
   if layout.config_mode == 'merged' then
     layout.config_mode = 'default'
@@ -481,12 +511,15 @@ function M.setup_keymaps()
   -- Navigation mappings
   vim.keymap.set('n', '<CR>', navigate_into, { buffer = layout.nav_buf, silent = true })
   vim.keymap.set('n', 'l', navigate_into, { buffer = layout.nav_buf, silent = true })
+  vim.keymap.set('n', '<Right>', navigate_into, { buffer = layout.nav_buf, silent = true })
   vim.keymap.set('n', 'h', navigate_up, { buffer = layout.nav_buf, silent = true })
+  vim.keymap.set('n', '<Left>', navigate_up, { buffer = layout.nav_buf, silent = true })
   vim.keymap.set('n', '<BS>', navigate_up, { buffer = layout.nav_buf, silent = true })
 
   -- Action mappings
   vim.keymap.set('n', 'x', reset_selected_key, { buffer = layout.nav_buf, silent = true })
   vim.keymap.set('n', 'e', edit_selected_key, { buffer = layout.nav_buf, silent = true })
+  vim.keymap.set('n', 't', toggle_selected_key, { buffer = layout.nav_buf, silent = true })
 
   -- Common mappings for both panes
   for _, buf in ipairs({ layout.nav_buf, layout.config_buf }) do
